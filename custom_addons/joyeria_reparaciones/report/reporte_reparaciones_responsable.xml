@@ -32,7 +32,7 @@
         .tbl-compact col.c-ncm      { width: 9%; }
         .tbl-compact col.c-peso     { width: 7%; }
         .tbl-compact col.c-op       { width: 20%; }  /* OPERACION: texto largo, pero ajustado */
-        .tbl-compact col.c-fecha    { width: 8%; }
+        .tbl-compact col.c-fecha    { width: 9%; }
         .tbl-compact col.c-gr       { width: 7%; }
         /* Título más compacto */
         .rep-title {
