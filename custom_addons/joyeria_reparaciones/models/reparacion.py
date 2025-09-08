@@ -12,7 +12,7 @@ import pytz
 from  pytz import utc
 from pytz import timezone
 from datetime import datetime, timedelta
-import unicodedata
+
 
 
 CHILE_TZ = pytz.timezone('America/Santiago')
@@ -31,6 +31,8 @@ class Reparacion(models.Model):
         readonly=True,
         default='Nuevo'
     )
+
+
     producto_id = fields.Many2one('joyeria.producto', string='Producto a reparar', required=False)
     modelo = fields.Char(string='Modelo', required=False)
     cliente_id = fields.Many2one('res.partner', string='Nombre y apellido del Cliente', required=True)
@@ -54,7 +56,7 @@ class Reparacion(models.Model):
         ('cliente mayorista', 'Cliente Mayorista'),
         ('cliente preferente', 'Cliente Preferente')
 
-    ], string='Tipo Cliente', required=True, tracking=True)
+    ], string='Tipo Cliente', required=False, tracking=True)
 
     tipo_joya = fields.Selection([
         ('anillo', 'Anillo'),
@@ -66,7 +68,6 @@ class Reparacion(models.Model):
         ('pulsera', 'Pulsera'),
         ('otro', 'Otro')
     ], string='Tipo de joya', required=True)
-    
     metal = fields.Selection([
         ('oro 14k', 'Oro 14K'),
         ('oro 18k rosado', 'Oro 18K Rosado'),
@@ -84,8 +85,11 @@ class Reparacion(models.Model):
         ('estandar', 'Estándar'),
         ('especial', 'Especial')
     ], string='Tipo de peso', required=True, tracking=True)
-    peso_valor = fields.Float(string='Peso', required=False, tracking=True)
+
+    peso_valor = fields.Float(string='Peso', required=True, tracking=True)
     vendedora_id= fields.Many2one('joyeria.vendedora', string='Recibido por', readonly=True, tracking=True)
+
+
     servicio = fields.Selection([
         ('reparacion', 'Reparación'),
         ('fabricacion', 'Fabricación')
@@ -96,6 +100,7 @@ class Reparacion(models.Model):
     #    ('gr', 'Gramo'),
      #   ('kg', 'Kilogramo'),
     #], string='Unidades', required=True)
+
     n_cm_reparacion = fields.Char(string='N° CM Reparación')
     n_cm_fabricacion = fields.Char(string='N° CM Fabricación')
     cantidad = fields.Float(string='Cantidad', required=True, tracking=True)
@@ -110,6 +115,10 @@ class Reparacion(models.Model):
         ('local maipu', 'Local Maipú'),
         ('local 921', 'Local 921'),
     ], string='Tienda', required=True)
+    
+
+
+
     precio_unitario = fields.Float(string='Precio unitario', tracking=True)
     extra = fields.Float(string='Extra', tracking=True)
     extra2 = fields.Float(string='Extra 2', tracking=True)
@@ -168,48 +177,6 @@ class Reparacion(models.Model):
     fecha_firma = fields.Datetime(string='Fecha de firma', readonly=True)
     clave_firma_manual = fields.Char(string='QR de quien retira')
 
-    @staticmethod
-    def _normalize_name(name):
-        """Normaliza el nombre: minúsculas, sin tildes, espacios simples."""
-        if not name:
-            return ''
-        s = ''.join(c for c in unicodedata.normalize('NFKD', name) if not unicodedata.combining(c))
-        s = s.lower()
-        s = re.sub(r'\s+', ' ', s).strip()
-        return s
-
-    @api.constrains('cliente_id')
-    def _check_cliente_id_unique_name(self):
-        """
-        Valida que el cliente asignado en cliente_id no duplique el nombre
-        de otro cliente (persona activa sin ser usuario del sistema).
-        """
-        for rec in self:
-            cliente = rec.cliente_id
-            if not cliente or not cliente.active or cliente.is_company:
-                continue
-
-            nombre_normalizado = rec._normalize_name(cliente.name)
-
-            # Buscar otros partners con el mismo nombre canónico
-            duplicates = self.env['res.partner'].search([
-                ('id', '!=', cliente.id),
-                ('active', '=', True),
-                ('is_company', '=', False),
-            ], limit=50)
-
-            for dup in duplicates:
-                if rec._normalize_name(dup.name) == nombre_normalizado:
-                    # Si el duplicado tiene usuario, lo ignoramos (puede ser responsable del sistema)
-                    tiene_usuario = self.env['res.users'].search_count([('partner_id', '=', dup.id)], limit=1)
-                    if not tiene_usuario:
-                        raise ValidationError(
-                            "El cliente «%s» ya existe con el mismo nombre y apellido.\n"
-                            "Por favor selecciona el cliente existente o combina los contactos."
-                            % (dup.name,)
-                        )
-
-
     @api.depends('fecha_recepcion')
     def _compute_vencimiento_garantia(self):
         for rec in self:
@@ -256,8 +223,6 @@ class Reparacion(models.Model):
         else:
             self.vendedora_id = False
     
-    
-    
 
     @api.onchange('responsable_id')
     def _onchange_responsable_auto_confirm_first_time(self):
@@ -267,7 +232,7 @@ class Reparacion(models.Model):
             # Si no tenía responsable en BD y ahora sí se asignó, auto-confirmar
             if (not prev_tenía_responsable) and rec.responsable_id and rec.estado != 'confirmado':
                 rec.estado = 'confirmado'
-    
+
     @api.onchange('clave_firma_manual')
     def _onchange_firma_auto_entregado_first_time(self):
         for rec in self:
@@ -326,11 +291,14 @@ class Reparacion(models.Model):
                     "por ejemplo: +56 9 XXXX XXXX"
                 )
 
+
+
     @api.depends()
     def _compute_estado(self):
         for rec in self:
             if not self.env.user.has_group('joyeria_reparaciones.grupo_gestion_estado_reparacion'):
                 rec.estado = rec.estado  # No cambia el valor, pero evita la edición
+
 
     @api.depends('cantidad', 'precio_unitario', 'extra', 'extra2', 'extra3')
     def _compute_subtotal(self):
@@ -348,6 +316,12 @@ class Reparacion(models.Model):
         for rec in self:
             rec.peso_total = rec.gramos_utilizado + rec.metales_extra
 
+    
+
+    
+    
+
+
     #def write(self, vals):
      #   for rec in self:
       #      peso = vals.get('peso', rec.peso)
@@ -356,6 +330,8 @@ class Reparacion(models.Model):
          #       raise ValidationError("Debe ingresar un valor para el peso si selecciona tipo 'Especial'.")
         #return super().write(vals)
 
+
+    
     @api.depends('cobro_interno', 'hechura', 'cobros_extras')
     def _compute_total_salida(self):
         for rec in self:
@@ -365,6 +341,7 @@ class Reparacion(models.Model):
     def _onchange_clave_firma_manual(self):
         self._procesar_firma()
 
+    
 
     def _procesar_firma(self):
         if self.clave_firma_manual:
@@ -399,7 +376,7 @@ class Reparacion(models.Model):
             if vendedora:
                 self.vendedora_id = vendedora.id
 
-# ###create funcional######
+###create funcional######
     @api.model
     def create(self, vals):
         ahora = datetime.now(CHILE_TZ).strftime('%d/%m/%Y %H:%M:%S')
@@ -485,9 +462,12 @@ class Reparacion(models.Model):
 
             # Si no están vinculados a reparaciones, permitir edición normal
             return super().write(vals)
-
     
 
+
+
+    
+    
 
 
 
@@ -566,12 +546,44 @@ class Reparacion(models.Model):
                 'fecha_fin': fecha_fin.strftime('%Y-%m-%d'),
             }
         )
+
+
+
+    
+
+
+
+
+    
+
+
+    def imprimir_reporte_responsables(self):
+        # Rango de fechas fijo, puedes cambiarlo más adelante a dinámico
+        fecha_inicio = datetime.strptime('2024-01-01', '%Y-%m-%d')
+        fecha_fin = datetime.strptime('2025-12-31', '%Y-%m-%d')
+
+        reparaciones = self.search([
+            ('fecha_entrega', '>=', fecha_inicio),
+            ('fecha_entrega', '<=', fecha_fin),
+        ], order='fecha_entrega asc')  # Orden ascendente por fecha_entrega
+
+        return self.env.ref('joyeria_reparaciones.reporte_reparaciones_responsable_action').report_action(
+            reparaciones,
+            data={
+                'fecha_inicio': fecha_inicio.strftime('%Y-%m-%d'),
+                'fecha_fin': fecha_fin.strftime('%Y-%m-%d'),
+            }
+        )
+    
+    
     
     
     def copy(self, default=None):
         if self.env.user.has_group('joyeria_reparaciones.grupo_gestion_estado_reparacion'):
             raise UserError("No tienes permiso para duplicar órdenes de reparación.")
         return super(Reparacion, self).copy(default)
+
+
 
 
     def _generar_codigo_qr(self):
@@ -583,6 +595,11 @@ class Reparacion(models.Model):
                 qr_img.save(buffer, format="PNG")
                 record.qr = base64.b64encode(buffer.getvalue())
     
+
+
+    
+
+
 
     def unlink(self):
         if self.env.user.has_group('joyeria_reparaciones.grupo_gestion_estado_reparacion'):
@@ -613,7 +630,6 @@ class Reparacion(models.Model):
             args += [('name', operator, name)]
         return self.search(args, limit=limit).name_get()
 
-
 class ResPartnerRequirePhoneAlways(models.Model):
     _inherit = 'res.partner'
 
@@ -632,6 +648,7 @@ class ResPartnerRequirePhoneAlways(models.Model):
                     )
 
 
+
 class Operacion(models.Model):
     _name = 'joyeria.operacion'
     _description = 'Línea de operación de reparación'
@@ -642,7 +659,6 @@ class Operacion(models.Model):
     cantidad = fields.Float(string='Cantidad')
     unidad_medida = fields.Char(string='Unidad de medida')
     precio_unitario = fields.Float(string='Precio unitario')
-
 
 
 class Vendedora(models.Model):
@@ -718,3 +734,10 @@ class Vendedora(models.Model):
     def imprimir_etiqueta_vendedora(self):
         return self.env.ref('joyeria_reparaciones.action_report_etiqueta_vendedora').report_action(self)
 
+
+
+
+            
+
+
+  
