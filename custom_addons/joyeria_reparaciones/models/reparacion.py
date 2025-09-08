@@ -1,4 +1,4 @@
-from odoo import models, fields, api, SUPERUSER_ID, _
+from odoo import models, fields, api
 from odoo.exceptions import ValidationError, UserError
 from dateutil.relativedelta import relativedelta
 import base64
@@ -50,14 +50,6 @@ class Reparacion(models.Model):
         default=lambda self: fields.Datetime.now(),
         readonly=True
     )
-
-    tipo_cliente= fields.Selection([
-        ('cliente normal', 'Cliente Normal'),
-        ('cliente mayorista', 'Cliente Mayorista'),
-        ('cliente preferente', 'Cliente Preferente')
-
-    ], string='Tipo Cliente', required=False, tracking=True)
-
     tipo_joya = fields.Selection([
         ('anillo', 'Anillo'),
         ('argolla', 'Argolla'),
@@ -122,7 +114,6 @@ class Reparacion(models.Model):
     precio_unitario = fields.Float(string='Precio unitario', tracking=True)
     extra = fields.Float(string='Extra', tracking=True)
     extra2 = fields.Float(string='Extra 2', tracking=True)
-    extra3 = fields.Float(string='Extra 3', tracking=True)
     subtotal = fields.Float(string='Subtotal', compute='_compute_subtotal', store=True)
     abono = fields.Float(string='Abono', tracking=True,)
     saldo = fields.Float(string="Saldo", compute='_compute_saldo', store=True)
@@ -138,12 +129,12 @@ class Reparacion(models.Model):
     estado = fields.Selection([
         ('presupuesto', 'Presupuesto'),
         ('reparado', 'Reparado'),
-        ('reparado y entregado', 'Reparado y Entregado'),
+        ('cancelado', 'Cancelado'),
         ('confirmado', 'Confirmado')
     ], string='Estado', default='presupuesto', tracking=True, required=True, store=True, readonly=False)
 
 
-    clave_autenticacion_manual = fields.Char(string='QR de quien recibe', required=True)
+    clave_autenticacion_manual = fields.Char(string='Clave de Autenticación', tracking=False)
 
     # NUEVOS CAMPOS
     metal_utilizado = fields.Selection([
@@ -164,18 +155,19 @@ class Reparacion(models.Model):
 
     metales_extra = fields.Float("Metales extra(gr)")
 
-    cobro_interno = fields.Float("Cobro interno")
-    hechura = fields.Float("Hechura")
-    cobros_extras = fields.Float("Cobros extras")
-    total_salida_taller = fields.Float("Total salida del taller", compute="_compute_total_salida", store=True)
-    peso_total = fields.Float("Peso total", compute="_compute_peso_total", store=True)
+    cobro_interno = fields.Float("🛠️ Cobro interno")
+    hechura = fields.Float("🔨 Hechura")
+    cobros_extras = fields.Float("➕ Cobros extras")
+    total_salida_taller = fields.Float("💰 Total salida del taller", compute="_compute_total_salida", store=True)
+    peso_total = fields.Float("💰 Peso total", compute="_compute_peso_total", store=True)
 
 
     #firma_salida_id = fields.Many2one('joyeria.vendedora', string="Firma salida del taller", readonly=True)
     #fecha_salida_taller = fields.Datetime("🕒 Fecha y hora de salida", readonly=True)
-    firma_id = fields.Many2one('joyeria.vendedora', string='Retirado por', readonly=True, tracking=True)
+    firma_id = fields.Many2one('joyeria.vendedora', string='Firmado por', readonly=True, tracking=True)
     fecha_firma = fields.Datetime(string='Fecha de firma', readonly=True)
-    clave_firma_manual = fields.Char(string='QR de quien retira')
+    clave_firma_manual = fields.Char(string='Clave o QR para firma')
+
 
     @api.depends('fecha_recepcion')
     def _compute_vencimiento_garantia(self):
@@ -224,24 +216,6 @@ class Reparacion(models.Model):
             self.vendedora_id = False
     
 
-    @api.onchange('responsable_id')
-    def _onchange_responsable_auto_confirm_first_time(self):
-        for rec in self:
-            # Valor "persistido" antes del cambio (lo que hay en la BD)
-            prev_tenía_responsable = bool(rec._origin.responsable_id) if rec._origin and rec._origin.id else False
-            # Si no tenía responsable en BD y ahora sí se asignó, auto-confirmar
-            if (not prev_tenía_responsable) and rec.responsable_id and rec.estado != 'confirmado':
-                rec.estado = 'confirmado'
-
-    @api.onchange('clave_firma_manual')
-    def _onchange_firma_auto_entregado_first_time(self):
-        for rec in self:
-            # ¿Tenía firma antes en la BD?
-            prev_tenia_firma = bool(rec._origin.firma_id) if rec._origin and rec._origin.id else False
-            # Si ahora hay clave (se escaneó) y ya quedó asignada la firma (tu onchange actual la setea),
-            # y antes NO tenía firma, entonces es la primera vez -> pasar a "reparado y entregado".
-            if (not prev_tenia_firma) and rec.clave_firma_manual and rec.firma_id and rec.estado != 'reparado y entregado':
-                rec.estado = 'reparado y entregado'
 
 
     
@@ -300,10 +274,10 @@ class Reparacion(models.Model):
                 rec.estado = rec.estado  # No cambia el valor, pero evita la edición
 
 
-    @api.depends('cantidad', 'precio_unitario', 'extra', 'extra2', 'extra3')
+    @api.depends('cantidad', 'precio_unitario', 'extra', 'extra2')
     def _compute_subtotal(self):
         for rec in self:
-            rec.subtotal = rec.cantidad * rec.precio_unitario + rec.extra + rec.extra2 + rec.extra3
+            rec.subtotal = rec.cantidad * rec.precio_unitario + rec.extra + rec.extra2
 
     @api.depends('subtotal', 'abono')
     def _compute_saldo(self):
@@ -382,12 +356,8 @@ class Reparacion(models.Model):
         ahora = datetime.now(CHILE_TZ).strftime('%d/%m/%Y %H:%M:%S')
         mensajes = []
 
-        is_admin = self.env.uid == SUPERUSER_ID or self.env.user.has_group('base.group_system')
-        # ✅ Detectar importación (wizard de importar Odoo)
-        is_import = bool(self.env.context.get('import_file') or self.env.context.get('from_import'))
-
-        # ✅ Validar peso especial (solo si NO es admin y NO es importación)
-        if (not is_admin) and (not is_import) and vals.get('peso') == 'especial' and not vals.get('peso_valor'):
+        # ✅ Validar peso especial (usando campo 'peso' y 'peso_valor' como indicaste)
+        if vals.get('peso') == 'especial' and not vals.get('peso_valor'):
             raise ValidationError("Debe ingresar un valor para el campo 'Peso' si selecciona tipo de peso 'Especial'.")
 
         # Generar secuencia
@@ -441,27 +411,6 @@ class Reparacion(models.Model):
         return record
 
 
-    class ResPartnerRestrictWriteForRMAClients(models.Model):
-        _inherit = 'res.partner'
-
-        def _is_admin(self):
-            return self.env.uid == SUPERUSER_ID or self.env.user.has_group('base.group_system')
-
-        def write(self, vals):
-            # Admin siempre puede editar
-            if self._is_admin():
-                return super().write(vals)
-
-            # ¿Alguno de estos partners es/ha sido usado como cliente en una reparación?
-            # (Si sí, solo admin puede editar su información)
-            Reparacion = self.env['joyeria.reparacion'].sudo()
-            if Reparacion.search_count([('cliente_id', 'in', self.ids)]) > 0:
-                raise ValidationError(
-                    "Solo los administradores pueden editar la información de clientes asociados a reparaciones."
-                )
-
-            # Si no están vinculados a reparaciones, permitir edición normal
-            return super().write(vals)
     
 
 
@@ -506,18 +455,16 @@ class Reparacion(models.Model):
 
 ###write funcional"""""""""
     def write(self, vals):
-        is_admin = self.env.uid == SUPERUSER_ID or self.env.user.has_group('base.group_system')
+        for rec in self:
+            # Validar que no se cambie el tipo de peso una vez creado
+            if 'peso' in vals and vals['peso'] != rec.peso:
+                raise ValidationError("No se permite cambiar el tipo de peso una vez creado el registro.")
 
-        # Validaciones SOLO para usuarios NO admin
-        if not is_admin:
-            for rec in self:
-                # No permitir cambiar el tipo de peso una vez creado
-                if 'peso' in vals and vals['peso'] != rec.peso:
-                    raise ValidationError("No se permite cambiar el tipo de peso una vez creado el registro.")
-                # Si en el futuro reactivas la validación de peso_valor, quedaría aquí análoga
+            # Validar que no se cambie el valor del peso una vez creado
+            #if 'peso_valor' in vals and vals['peso_valor'] != rec.peso_valor:
+            #    raise ValidationError("No se permite modificar el valor del peso una vez creado el registro.")
 
         res = super().write(vals)
-
         for rec in self:
             # ✍️ Procesar firma si se ingresó clave
             if vals.get('clave_firma_manual'):
@@ -526,26 +473,7 @@ class Reparacion(models.Model):
             # 📦 Procesar vendedora si se ingresó clave
             if vals.get('clave_autenticacion_manual'):
                 rec._procesar_vendedora()
-
         return res
-
-    def imprimir_reporte_responsables(self):
-        # Rango de fechas fijo, puedes cambiarlo más adelante a dinámico
-        fecha_inicio = datetime.strptime('2024-01-01', '%Y-%m-%d')
-        fecha_fin = datetime.strptime('2025-12-31', '%Y-%m-%d')
-
-        reparaciones = self.search([
-            ('fecha_entrega', '>=', fecha_inicio),
-            ('fecha_entrega', '<=', fecha_fin),
-        ], order='fecha_entrega asc')  # Orden ascendente por fecha_entrega
-
-        return self.env.ref('joyeria_reparaciones.reporte_reparaciones_responsable_action').report_action(
-            reparaciones,
-            data={
-                'fecha_inicio': fecha_inicio.strftime('%Y-%m-%d'),
-                'fecha_fin': fecha_fin.strftime('%Y-%m-%d'),
-            }
-        )
 
 
 
@@ -630,22 +558,6 @@ class Reparacion(models.Model):
             args += [('name', operator, name)]
         return self.search(args, limit=limit).name_get()
 
-class ResPartnerRequirePhoneAlways(models.Model):
-    _inherit = 'res.partner'
-
-    @api.constrains('phone', 'mobile', 'is_company', 'active')
-    def _check_phone_required_for_person(self):
-        """
-        Obliga a ingresar teléfono (phone o mobile) para PERSONAS activas.
-        Se ejecuta en create/write y es independiente del contexto del popup.
-        """
-        for rec in self:
-            # Sólo aplica a clientes/personas (no empresas) y activos
-            if rec.active and not rec.is_company:
-                if not (rec.phone and rec.phone.strip()) and not (rec.mobile and rec.mobile.strip()):
-                    raise ValidationError(
-                        "Debe ingresar un número de teléfono (Teléfono o Móvil) para crear/guardar el cliente."
-                    )
 
 
 
