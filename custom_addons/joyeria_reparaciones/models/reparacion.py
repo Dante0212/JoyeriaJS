@@ -644,6 +644,7 @@ class Operacion(models.Model):
     precio_unitario = fields.Float(string='Precio unitario')
 
 
+
 class Vendedora(models.Model):
     
     
