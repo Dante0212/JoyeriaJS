@@ -57,6 +57,7 @@
                ('responsable_id','=', usuario.id),
                ('fecha_entrega','!=', False),
                ('estado','!=','reparado'),
+               ('estado','!=','reparado y entregado'),
              ],
              order='fecha_entrega asc'
            )"/>
