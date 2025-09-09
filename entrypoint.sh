@@ -1,13 +1,25 @@
 #!/bin/sh
+
 set -e
 
-# Limpieza ligera opcional
-rm -rf /tmp/* || true
+echo Waiting for database...
 
-# Puedes hacer migraciones puntuales aquí (opcional):
-# odoo -d "$PGDATABASE" -u joyeria_reparaciones --stop-after-init || true
+while ! nc -z ${ODOO_DATABASE_HOST} ${ODOO_DATABASE_PORT} 2>&1; do sleep 1; done; 
 
-# Lanzar Odoo en primer plano (exec para no dejar /bin/sh como PID 1)
-exec odoo --http-port "${PORT:-8069}" --proxy-mode \
-  --addons-path="/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons,/mnt/custom_addons" \
-  --db_host="${PGHOST}" --db_port="${PGPORT}" --db_user="${PGUSER}" --db_password="${PGPASSWORD}" "$@"
+echo Database is now available
+
+exec odoo \
+    --http-port="${PORT}" \
+    --without-demo=True \
+    --proxy-mode \
+    --db_host="${ODOO_DATABASE_HOST}" \
+    --db_port="${ODOO_DATABASE_PORT}" \
+    --db_user="${ODOO_DATABASE_USER}" \
+    --db_password="${ODOO_DATABASE_PASSWORD}" \
+    --database="${ODOO_DATABASE_NAME}" \
+    --smtp="${ODOO_SMTP_HOST}" \
+    --smtp-port="${ODOO_SMTP_PORT_NUMBER}" \
+    --smtp-user="${ODOO_SMTP_USER}" \
+    --smtp-password="${ODOO_SMTP_PASSWORD}" \
+    --email-from="${ODOO_EMAIL_FROM}" \
+    --addons-path=/mnt/custom_addons,/usr/lib/python3/dist-packages/odoo/addons

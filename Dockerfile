@@ -1,18 +1,23 @@
-# Dockerfile.min
 FROM odoo:17.0
 
-# Locales básicos (opcional)
-RUN apt-get update -y && apt-get install -y --no-install-recommends locales netcat-openbsd \
-    && rm -rf /var/lib/apt/lists/* \
-    && locale-gen en_US.UTF-8
+ARG LOCALE=en_US.UTF-8
 
-ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US.UTF-8
+ENV LANGUAGE=${LOCALE}
+ENV LC_ALL=${LOCALE}
+ENV LANG=${LOCALE}
 
-# Copia tus addons
+USER 0
+
+RUN apt-get -y update && apt-get install -y --no-install-recommends locales netcat-openbsd \
+    && locale-gen ${LOCALE}
+
+WORKDIR /app
+
+
+COPY --chmod=755 entrypoint.sh ./
+
 COPY ./custom_addons /mnt/custom_addons
 
-# Arranque directo de Odoo (sin entrypoint.sh)
-CMD ["odoo",
-     "--http-port", "$PORT",
-     "--proxy-mode",
-     "--addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons,/mnt/custom_addons"]
+ENTRYPOINT ["/bin/sh"]
+
+CMD ["entrypoint.sh"]
